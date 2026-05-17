@@ -1,35 +1,71 @@
+require("dotenv").config();
+
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
-const dotenv = require("dotenv");
-
-dotenv.config();
+const axios = require("axios");
 
 const app = express();
 
-// Middleware
+/* =========================================
+   MIDDLEWARES
+========================================= */
+
 app.use(cors());
+
 app.use(express.json());
 
-// =========================
-// MongoDB Connection
-// =========================
+// Logger Middleware
+app.use((req, res, next) => {
+  console.log(
+    `${req.method} ${req.url} - ${new Date().toLocaleString()}`
+  );
+  next();
+});
+
+/* =========================================
+   DATABASE CONNECTION
+========================================= */
+
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB Connected"))
-  .catch((err) =>
-    console.log("❌ DB Error:", err)
-  );
+  .then(() => {
+    console.log("✅ MongoDB Connected");
+  })
+  .catch((err) => {
+    console.log("❌ MongoDB Error:", err);
+  });
 
-// =========================
-// Candidate Schema
-// =========================
+/* =========================================
+   CANDIDATE SCHEMA
+========================================= */
+
 const candidateSchema = new mongoose.Schema({
-  name: String,
-  email: String,
-  skills: [String],
-  experience: Number,
-  projects: String,
+  name: {
+    type: String,
+    required: true,
+  },
+
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+  },
+
+  skills: {
+    type: [String],
+    required: true,
+  },
+
+  experience: {
+    type: Number,
+    required: true,
+  },
+
+  bio: {
+    type: String,
+    default: "",
+  },
 
   createdAt: {
     type: Date,
@@ -42,159 +78,249 @@ const Candidate = mongoose.model(
   candidateSchema
 );
 
-// =========================
-// Home Route
-// =========================
+/* =========================================
+   HOME ROUTE
+========================================= */
+
 app.get("/", (req, res) => {
   res.send(
     "🚀 Candidate Shortlisting API Running"
   );
 });
 
-// =========================
-// Add Candidate API
-// =========================
-app.post(
-  "/api/candidates",
-  async (req, res) => {
+/* =========================================
+   ADD CANDIDATE
+========================================= */
 
-    try {
+app.post("/api/candidates", async (req, res) => {
+  try {
+    const {
+      name,
+      email,
+      skills,
+      experience,
+      bio,
+    } = req.body;
 
-      const candidate = new Candidate(
-        req.body
-      );
-
-      await candidate.save();
-
-      res.status(201).json({
+    // Validation
+    if (
+      !name ||
+      !email ||
+      !skills ||
+      !experience
+    ) {
+      return res.status(400).json({
+        success: false,
         message:
-          "✅ Candidate Added Successfully",
-        candidate,
+          "All required fields are mandatory",
       });
-
-    } catch (error) {
-
-      res.status(500).json({
-        error: error.message,
-      });
-
     }
-  }
-);
 
-// =========================
-// Get All Candidates API
-// =========================
+    // Check Existing Candidate
+    const existingCandidate =
+      await Candidate.findOne({ email });
+
+    if (existingCandidate) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Candidate already exists",
+      });
+    }
+
+    // Create Candidate
+    const candidate =
+      await Candidate.create({
+        name,
+        email,
+        skills,
+        experience,
+        bio,
+      });
+
+    res.status(201).json({
+      success: true,
+      message:
+        "✅ Candidate Added Successfully",
+      candidate,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
+
+/* =========================================
+   GET ALL CANDIDATES
+========================================= */
+
+app.get("/api/candidates", async (req, res) => {
+  try {
+    const candidates =
+      await Candidate.find().sort({
+        createdAt: -1,
+      });
+
+    res.status(200).json({
+      success: true,
+      totalCandidates:
+        candidates.length,
+      candidates,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
+
+/* =========================================
+   SEARCH CANDIDATES
+========================================= */
+
 app.get(
-  "/api/candidates",
+  "/api/search/:skill",
   async (req, res) => {
-
     try {
+      const skill =
+        req.params.skill;
 
       const candidates =
-        await Candidate.find();
+        await Candidate.find({
+          skills: {
+            $regex: new RegExp(
+              skill,
+              "i"
+            ),
+          },
+        });
 
-      res.json(candidates);
-
-    } catch (error) {
-
-      res.status(500).json({
-        error: error.message,
+      res.status(200).json({
+        success: true,
+        total: candidates.length,
+        candidates,
       });
-
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: error.message,
+      });
     }
   }
 );
 
-// =========================
-// Match Candidates API
-// =========================
-app.post(
-  "/api/match",
-  async (req, res) => {
+/* =========================================
+   BASIC SHORTLISTING API
+========================================= */
 
-    try {
+app.post("/api/match", async (req, res) => {
+  try {
+    const {
+      requiredSkills,
+      minExperience,
+    } = req.body;
 
-      const {
-        requiredSkills,
-        minExperience,
-      } = req.body;
+    if (
+      !requiredSkills ||
+      requiredSkills.length === 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Required skills missing",
+      });
+    }
 
-      const candidates =
-        await Candidate.find();
+    const candidates =
+      await Candidate.find();
 
-      const matchedCandidates =
-        candidates
-          .map((candidate) => {
-
-            const matchedSkills =
-              candidate.skills.filter(
-                (skill) =>
-                  requiredSkills.includes(
-                    skill
+    const shortlistedCandidates =
+      candidates
+        .map((candidate) => {
+          // Case Insensitive Skill Match
+          const matchedSkills =
+            candidate.skills.filter(
+              (skill) =>
+                requiredSkills
+                  .map((s) =>
+                    s.toLowerCase()
                   )
-              );
+                  .includes(
+                    skill.toLowerCase()
+                  )
+            );
 
-            const score =
-              (matchedSkills.length /
-                requiredSkills.length) *
-              100;
+          // Skill Score
+          const skillScore =
+            matchedSkills.length /
+            requiredSkills.length;
 
-            let rank = "Low";
+          // Experience Score
+          const experienceScore =
+            candidate.experience >=
+            minExperience
+              ? 1
+              : 0;
 
-            if (score >= 80) {
-              rank = "High";
-            } else if (score >= 50) {
-              rank = "Medium";
-            }
+          // Final Score
+          const finalScore =
+            skillScore * 0.8 +
+            experienceScore * 0.2;
 
-            return {
-              id: candidate._id,
-              name: candidate.name,
-              email: candidate.email,
-              skills: candidate.skills,
-              experience:
-                candidate.experience,
-              matchedSkills,
-              matchScore:
-                score.toFixed(2),
-              rank,
-            };
-          })
+          return {
+            id: candidate._id,
+            name: candidate.name,
+            email: candidate.email,
+            skills: candidate.skills,
+            experience:
+              candidate.experience,
 
-          .filter(
-            (candidate) =>
-              candidate.experience >=
-              minExperience
-          )
+            matchedSkills,
 
-          .sort(
-            (a, b) =>
-              b.matchScore -
-              a.matchScore
-          );
+            matchPercentage:
+              Math.round(
+                finalScore * 100
+              ),
 
-      res.json(matchedCandidates);
+            ranking:
+              finalScore >= 0.8
+                ? "High Match"
+                : finalScore >= 0.5
+                ? "Medium Match"
+                : "Low Match",
+          };
+        })
 
-    } catch (error) {
+        // Sort Highest Match First
+        .sort(
+          (a, b) =>
+            b.matchPercentage -
+            a.matchPercentage
+        );
 
-      res.status(500).json({
-        error: error.message,
-      });
-
-    }
+    res.status(200).json({
+      success: true,
+      shortlistedCandidates,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
-);
+});
 
-// =========================
-// AI Shortlisting API
-// =========================
+/* =========================================
+   AI SHORTLISTING API
+========================================= */
+
 app.post(
   "/api/ai/shortlist",
   async (req, res) => {
-
     try {
-
       const {
         requiredSkills,
         minExperience,
@@ -203,106 +329,159 @@ app.post(
       const candidates =
         await Candidate.find();
 
-      const shortlisted =
-        candidates.filter(
-          (candidate) => {
+      if (candidates.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "No candidates found",
+        });
+      }
 
-            const matchedSkills =
-              candidate.skills.filter(
-                (skill) =>
-                  requiredSkills.includes(
-                    skill
-                  )
-              );
+      // Format Candidate Data
+      const formattedCandidates =
+        candidates
+          .map(
+            (candidate, index) =>
+              `
+${index + 1}. ${candidate.name}
+Skills: ${candidate.skills.join(
+                ", "
+              )}
+Experience: ${
+                candidate.experience
+              } years
+Bio: ${candidate.bio}
+`
+          )
+          .join("\n");
 
-            return (
-              matchedSkills.length >
-                0 &&
-              candidate.experience >=
-                minExperience
-            );
+      // AI Prompt
+      const prompt = `
+You are an AI Hiring Assistant.
+
+Job Requirements:
+Required Skills: ${requiredSkills.join(
+        ", "
+      )}
+
+Minimum Experience:
+${minExperience} years
+
+Candidates:
+${formattedCandidates}
+
+Tasks:
+1. Rank candidates from best to worst
+2. Explain why they are suitable
+3. Mention strengths
+4. Give hiring recommendation
+`;
+
+      // OpenRouter API Call
+      const response =
+        await axios.post(
+          "https://openrouter.ai/api/v1/chat/completions",
+          {
+            model:
+              "openai/gpt-5.2",
+
+            messages: [
+              {
+                role: "user",
+                content: prompt,
+              },
+            ],
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+
+              "Content-Type":
+                "application/json",
+            },
           }
         );
 
-      let result =
-        "🏆 AI Shortlisted Candidates\n\n";
+      const aiResult =
+        response.data.choices[0]
+          .message.content;
 
-      shortlisted.forEach(
-        (candidate, index) => {
-
-          result += `
-${index + 1}. ${candidate.name}
-
-Skills:
-${candidate.skills.join(", ")}
-
-Experience:
-${candidate.experience} years
-
-Projects:
-${candidate.projects}
-
--------------------------
-`;
-        }
-      );
-
-      res.json({
+      res.status(200).json({
         success: true,
-        aiResponse: result,
+        aiResult,
       });
-
     } catch (error) {
-
-      console.log(error);
+      console.log(
+        error.response?.data ||
+          error.message
+      );
 
       res.status(500).json({
         success: false,
-        error:
-          "❌ AI Shortlisting Failed",
+        message:
+          "AI Shortlisting Failed",
       });
     }
   }
 );
 
-// =========================
-// Delete Candidate API
-// =========================
+/* =========================================
+   DELETE CANDIDATE
+========================================= */
+
 app.delete(
   "/api/candidates/:id",
   async (req, res) => {
-
     try {
+      const candidate =
+        await Candidate.findById(
+          req.params.id
+        );
 
-      await Candidate.findByIdAndDelete(
-        req.params.id
-      );
+      if (!candidate) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Candidate not found",
+        });
+      }
 
-      res.json({
+      await candidate.deleteOne();
+
+      res.status(200).json({
+        success: true,
         message:
-          "🗑️ Candidate Deleted Successfully",
+          "Candidate Deleted Successfully",
       });
-
     } catch (error) {
-
       res.status(500).json({
-        error: error.message,
+        success: false,
+        message: error.message,
       });
-
     }
   }
 );
 
-// =========================
-// Server Start
-// =========================
+/* =========================================
+   404 ROUTE
+========================================= */
+
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: "Route Not Found",
+  });
+});
+
+/* =========================================
+   SERVER
+========================================= */
+
 const PORT =
   process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-
   console.log(
     `🚀 Server Running on Port ${PORT}`
   );
-
 });
