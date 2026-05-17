@@ -226,7 +226,7 @@ Rank the best candidates and explain why they are suitable.
           "https://openrouter.ai/api/v1/chat/completions",
           {
             model:
-              "google/gemma-2-9b-it:free",
+              "meta-llama/llama-3-8b-instruct:free",
 
             messages: [
               {
