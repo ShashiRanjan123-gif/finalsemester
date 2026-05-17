@@ -3,7 +3,8 @@ import axios from "axios";
 import "./App.css";
 
 function App() {
-  const API = "https://finalsemester.onrender.com";
+  // 🚀 UPDATED NEW API URL HERE
+  const API = "https://finalsemester-1.onrender.com";
 
   const [candidates, setCandidates] = useState([]);
 
@@ -21,8 +22,6 @@ function App() {
   });
 
   const [matchedCandidates, setMatchedCandidates] = useState([]);
-  
-  // Array state for storing structured AI results
   const [aiResult, setAiResult] = useState([]);
 
   // Fetch Candidates
@@ -97,7 +96,6 @@ function App() {
         minExperience: Number(jobData.minExperience),
       });
 
-      // Fixed property map from 'aiResponse' to backend's 'ranking'
       if (res.data && res.data.ranking) {
         setAiResult(res.data.ranking);
         alert("✅ AI Shortlisting Completed!");
@@ -217,7 +215,7 @@ function App() {
         )}
       </div>
 
-      {/* Matched Candidates Display (Basic Logic) */}
+      {/* Matched Candidates Display */}
       <div className="card">
         <h2>Matched Candidates (Basic Filter)</h2>
         {matchedCandidates.length === 0 ? (
