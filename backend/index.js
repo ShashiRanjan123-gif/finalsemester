@@ -27,38 +27,50 @@ const candidateSchema = new mongoose.Schema({
   skills: [String],
   experience: Number,
   projects: String,
+
   createdAt: {
     type: Date,
     default: Date.now,
   },
 });
 
-const Candidate = mongoose.model("Candidate", candidateSchema);
+const Candidate = mongoose.model(
+  "Candidate",
+  candidateSchema
+);
 
 // =========================
 // Home Route
 // =========================
 app.get("/", (req, res) => {
-  res.send("🚀 Candidate Shortlisting API Running");
+  res.send(
+    "🚀 Candidate Shortlisting API Running"
+  );
 });
 
 // =========================
 // Add Candidate API
 // =========================
 app.post("/api/candidates", async (req, res) => {
+
   try {
+
     const candidate = new Candidate(req.body);
 
     await candidate.save();
 
     res.status(201).json({
-      message: "✅ Candidate Added Successfully",
+      message:
+        "✅ Candidate Added Successfully",
       candidate,
     });
+
   } catch (error) {
+
     res.status(500).json({
       error: error.message,
     });
+
   }
 });
 
@@ -66,89 +78,142 @@ app.post("/api/candidates", async (req, res) => {
 // Get All Candidates API
 // =========================
 app.get("/api/candidates", async (req, res) => {
+
   try {
-    const candidates = await Candidate.find();
+
+    const candidates =
+      await Candidate.find();
 
     res.json(candidates);
+
   } catch (error) {
+
     res.status(500).json({
       error: error.message,
     });
+
   }
 });
 
 // =========================
-// Basic Matching API
+// Match Candidates API
 // =========================
 app.post("/api/match", async (req, res) => {
+
   try {
-    const { requiredSkills, minExperience } = req.body;
 
-    const candidates = await Candidate.find();
+    const {
+      requiredSkills,
+      minExperience,
+    } = req.body;
 
-    const matchedCandidates = candidates
-      .map((candidate) => {
-        const matchedSkills = candidate.skills.filter((skill) =>
-          requiredSkills.includes(skill)
+    const candidates =
+      await Candidate.find();
+
+    const matchedCandidates =
+      candidates
+        .map((candidate) => {
+
+          const matchedSkills =
+            candidate.skills.filter(
+              (skill) =>
+                requiredSkills.includes(skill)
+            );
+
+          const score =
+            (matchedSkills.length /
+              requiredSkills.length) *
+            100;
+
+          let rank = "Low";
+
+          if (score >= 80) {
+            rank = "High";
+          } else if (score >= 50) {
+            rank = "Medium";
+          }
+
+          return {
+            id: candidate._id,
+            name: candidate.name,
+            email: candidate.email,
+            skills: candidate.skills,
+            experience:
+              candidate.experience,
+            matchedSkills,
+            matchScore:
+              score.toFixed(2),
+            rank,
+          };
+        })
+
+        .filter(
+          (candidate) =>
+            candidate.experience >=
+            minExperience
+        )
+
+        .sort(
+          (a, b) =>
+            b.matchScore - a.matchScore
         );
 
-        const score =
-          (matchedSkills.length / requiredSkills.length) * 100;
-
-        let rank = "Low";
-
-        if (score >= 80) {
-          rank = "High";
-        } else if (score >= 50) {
-          rank = "Medium";
-        }
-
-        return {
-          id: candidate._id,
-          name: candidate.name,
-          email: candidate.email,
-          skills: candidate.skills,
-          experience: candidate.experience,
-          matchedSkills,
-          matchScore: score.toFixed(2),
-          rank,
-        };
-      })
-      .filter((candidate) => candidate.experience >= minExperience)
-      .sort((a, b) => b.matchScore - a.matchScore);
-
     res.json(matchedCandidates);
+
   } catch (error) {
+
     res.status(500).json({
       error: error.message,
     });
+
   }
 });
 
 // =========================
 // AI Shortlisting API
 // =========================
-app.post("/api/ai/shortlist", async (req, res) => {
-  try {
-    const { requiredSkills, minExperience } = req.body;
+app.post(
+  "/api/ai/shortlist",
+  async (req, res) => {
 
-    const candidates = await Candidate.find();
+    try {
 
-    let candidateText = "";
+      const {
+        requiredSkills,
+        minExperience,
+      } = req.body;
 
-    candidates.forEach((candidate, index) => {
-      candidateText += `
+      const candidates =
+        await Candidate.find();
+
+      let candidateText = "";
+
+      candidates.forEach(
+        (candidate, index) => {
+
+          candidateText += `
 ${index + 1}. ${candidate.name}
-Skills: ${candidate.skills.join(", ")}
-Experience: ${candidate.experience} years
-Projects: ${candidate.projects}
-`;
-    });
 
-    const prompt = `
+Skills:
+${candidate.skills.join(", ")}
+
+Experience:
+${candidate.experience} years
+
+Projects:
+${candidate.projects}
+`;
+        }
+      );
+
+      const prompt = `
 Job Requirements:
-Skills Required: ${requiredSkills.join(", ")}
-Minimum Experience: ${minExperience} years
+
+Skills Required:
+${requiredSkills.join(", ")}
+
+Minimum Experience:
+${minExperience} years
 
 Candidates:
 ${candidateText}
@@ -156,67 +221,92 @@ ${candidateText}
 Rank the best candidates and explain why they are suitable.
 `;
 
-    const response = await axios.post(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        model: "mistralai/mistral-7b-instruct",
-
-        messages: [
+      const response =
+        await axios.post(
+          "https://openrouter.ai/api/v1/chat/completions",
           {
-            role: "user",
-            content: prompt,
+            model:
+              "mistralai/mistral-7b-instruct:free",
+
+            messages: [
+              {
+                role: "user",
+                content: prompt,
+              },
+            ],
           },
-        ],
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
+          {
+            headers: {
+              Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
 
-    res.json({
-      success: true,
-      aiResponse:
-        response.data.choices[0].message.content,
-    });
+              "Content-Type":
+                "application/json",
+            },
+          }
+        );
 
-  } catch (error) {
+      res.json({
+        success: true,
 
-    console.log(
-      error.response?.data || error.message
-    );
+        aiResponse:
+          response.data.choices[0].message
+            .content,
+      });
 
-    res.status(500).json({
-      success: false,
-      error: "AI Shortlisting Failed",
-    });
+    } catch (error) {
+
+      console.log(
+        error.response?.data ||
+          error.message
+      );
+
+      res.status(500).json({
+        success: false,
+        error:
+          "❌ AI Shortlisting Failed",
+      });
+    }
   }
-});
+);
 
 // =========================
 // Delete Candidate API
 // =========================
-app.delete("/api/candidates/:id", async (req, res) => {
-  try {
-    await Candidate.findByIdAndDelete(req.params.id);
+app.delete(
+  "/api/candidates/:id",
+  async (req, res) => {
 
-    res.json({
-      message: "🗑️ Candidate Deleted Successfully",
-    });
-  } catch (error) {
-    res.status(500).json({
-      error: error.message,
-    });
+    try {
+
+      await Candidate.findByIdAndDelete(
+        req.params.id
+      );
+
+      res.json({
+        message:
+          "🗑️ Candidate Deleted Successfully",
+      });
+
+    } catch (error) {
+
+      res.status(500).json({
+        error: error.message,
+      });
+
+    }
   }
-});
+);
 
 // =========================
 // Server Start
 // =========================
-const PORT = process.env.PORT || 5000;
+const PORT =
+  process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server Running on Port ${PORT}`);
+
+  console.log(
+    `🚀 Server Running on Port ${PORT}`
+  );
+
 });
