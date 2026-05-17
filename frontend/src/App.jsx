@@ -3,6 +3,9 @@ import axios from "axios";
 import "./App.css";
 
 function App() {
+
+  const API = "https://finalsemester.onrender.com";
+
   const [candidates, setCandidates] = useState([]);
 
   const [candidateData, setCandidateData] = useState({
@@ -25,11 +28,13 @@ function App() {
   // Fetch Candidates
   const fetchCandidates = async () => {
     try {
+
       const res = await axios.get(
-        "http://localhost:5000/api/candidates"
+        `${API}/api/candidates`
       );
 
       setCandidates(res.data);
+
     } catch (error) {
       console.log(error);
     }
@@ -41,13 +46,16 @@ function App() {
 
   // Add Candidate
   const addCandidate = async (e) => {
+
     e.preventDefault();
 
     try {
+
       await axios.post(
-        "http://localhost:5000/api/candidates",
+        `${API}/api/candidates`,
         {
           ...candidateData,
+
           skills: candidateData.skills
             .split(",")
             .map((skill) => skill.trim()),
@@ -65,6 +73,7 @@ function App() {
       });
 
       fetchCandidates();
+
     } catch (error) {
       console.log(error);
     }
@@ -72,9 +81,11 @@ function App() {
 
   // Match Candidates
   const matchCandidates = async () => {
+
     try {
+
       const res = await axios.post(
-        "http://localhost:5000/api/match",
+        `${API}/api/match`,
         {
           requiredSkills: jobData.requiredSkills
             .split(",")
@@ -85,6 +96,7 @@ function App() {
       );
 
       setMatchedCandidates(res.data);
+
     } catch (error) {
       console.log(error);
     }
@@ -92,9 +104,11 @@ function App() {
 
   // AI Shortlisting
   const aiShortlisting = async () => {
+
     try {
+
       const res = await axios.post(
-        "http://localhost:5000/api/ai/shortlist",
+        `${API}/api/ai/shortlist`,
         {
           requiredSkills: jobData.requiredSkills
             .split(",")
@@ -105,20 +119,29 @@ function App() {
       );
 
       setAiResult(res.data.aiResponse);
+
     } catch (error) {
+
       console.log(error);
+
+      alert("❌ AI Shortlisting Failed");
+
     }
   };
 
   return (
+
     <div className="container">
+
       <h1>🚀 AI Candidate Shortlisting System</h1>
 
       {/* Add Candidate */}
       <div className="card">
+
         <h2>Add Candidate</h2>
 
         <form onSubmit={addCandidate}>
+
           <input
             type="text"
             placeholder="Enter Name"
@@ -179,15 +202,20 @@ function App() {
           ></textarea>
 
           <div className="button-group">
+
             <button type="submit">
               Add Candidate
             </button>
+
           </div>
+
         </form>
+
       </div>
 
       {/* Job Requirement */}
       <div className="card">
+
         <h2>Job Requirement</h2>
 
         <input
@@ -215,6 +243,7 @@ function App() {
         />
 
         <div className="button-group">
+
           <button onClick={matchCandidates}>
             Match Candidates
           </button>
@@ -222,18 +251,26 @@ function App() {
           <button onClick={aiShortlisting}>
             AI Shortlisting
           </button>
+
         </div>
+
       </div>
 
       {/* All Candidates */}
       <div className="card">
+
         <h2>All Candidates</h2>
 
         {candidates.length === 0 ? (
+
           <p>No Candidates Found</p>
+
         ) : (
+
           candidates.map((candidate) => (
+
             <div className="candidate" key={candidate._id}>
+
               <h3>{candidate.name}</h3>
 
               <p>
@@ -254,20 +291,30 @@ function App() {
                 <strong>Projects:</strong>{" "}
                 {candidate.projects}
               </p>
+
             </div>
+
           ))
+
         )}
+
       </div>
 
       {/* Matched Candidates */}
       <div className="card">
+
         <h2>Matched Candidates</h2>
 
         {matchedCandidates.length === 0 ? (
+
           <p>No Matched Candidates Yet</p>
+
         ) : (
+
           matchedCandidates.map((candidate, index) => (
+
             <div className="candidate" key={index}>
+
               <h3>{candidate.name}</h3>
 
               <p>
@@ -284,21 +331,32 @@ function App() {
                 <strong>Rank:</strong>{" "}
                 {candidate.rank}
               </p>
+
             </div>
+
           ))
+
         )}
+
       </div>
 
       {/* AI Recommendation */}
       <div className="card">
+
         <h2>AI Recommendation</h2>
 
         {aiResult ? (
+
           <pre>{aiResult}</pre>
+
         ) : (
+
           <p>No AI Recommendation Yet</p>
+
         )}
+
       </div>
+
     </div>
   );
 }
